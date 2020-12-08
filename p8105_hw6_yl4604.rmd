@@ -86,7 +86,6 @@ homicide_df %>%
 ```
 
 
-Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot
 ```{r}
 homi_result %>% 
   filter(term == 'victim_raceWhite') %>% 
@@ -102,7 +101,6 @@ homi_result %>%
 ##Problem 2 
 
 
-Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
 ```{r}
 birthwt_df = read_csv('data/birthweight.csv')%>% 
@@ -115,7 +113,8 @@ birthwt_df %>% skimr::skim_without_charts()
 ```
 
 
-### propose a model
+propose a model
+
 There is sense that mother's pre-birth BMI will have a positive impact on babybirthweight, and a mother who is smoking would have negtive impact on babybirth weight.
 
 ```{r}
@@ -147,7 +146,7 @@ birthwt_df %>%
 
 ```
 
-### setted model
+setted model
 ```{r}
 model_1 = lm(bwt ~ blength + gaweeks, data = birthwt_df)
 summary(model_1)
@@ -191,7 +190,7 @@ According to the plot, the second model, which is model_2(using head circumferen
 
 
 ##Problem 3 
-For this problem, we’ll use the 2017 Central Park weather data that we’ve seen elsewhere. The code chunk below (adapted from the course website) will download these data.
+
 ```{r}
 weather_df = 
   rnoaa::meteo_pull_monitors(
@@ -208,6 +207,7 @@ weather_df =
 
 
 ```{r}
+set.seed(1)
 boot_straps = 
   weather_df %>% 
   modelr::bootstrap(n = 5000) %>% 
@@ -252,10 +252,8 @@ boot_straps %>%
     r_squared_ci_lower = quantile(r.squared, 0.025), 
     r_squared_ci_upper = quantile(r.squared, 0.975),
     result_ci_lower = quantile(result, 0.025), 
-    result_ci_upper = quantile(result, 0.975))
+    result_ci_upper = quantile(result, 0.975)) %>% 
+  knitr::kable(caption = '95% CIs')
 ```
 
 
-r^2
-log(β^0∗β^1)
-Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. Plot the distribution of your estimates, and describe these in words. Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r^2 and log(β^0∗β^1). Note: broom::glance() is helpful for extracting r^2 from a fitted regression, and broom::tidy() (with some additional wrangling) should help in computing  log(β^0∗β^1)
