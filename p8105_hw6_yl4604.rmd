@@ -1,0 +1,261 @@
+---
+title: "p8105_hw6_yl4604"
+author: "Yu"
+date: "December 8, 2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(mgcv)
+library(p8105.datasets)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6, 
+  out.width = '90%'
+)
+
+theme_set(theme_minimal() + theme(legend.position = 'bottom')) 
+options(
+  ggplot2.continuous.color = 'viridis',
+  ggplot2.continuous.fill = 'viridis'
+)
+
+scale_color_discrete = scale_color_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+
+```
+
+##Problem 1
+
+```{r}
+homicide_df = read_csv('data/homicide-data.csv', na = c('', 'NA', 'Unknown')) %>% 
+  mutate(city_state = str_c(city, ',', state),
+         resolved = case_when(
+           disposition == 'Closed without arrest' ~ 0,
+           disposition == 'Open/No arrest' ~ 0,
+           disposition == 'Closed by arrest' ~ 1
+         )) %>% 
+  mutate(victim_age = as.numeric(victim_age)) %>% 
+  filter(victim_race %in% c('White', 'Black')) %>% 
+  filter(city_state != 'Tulsa,AL') %>% 
+  select(city_state, resolved, victim_age, victim_race, victim_sex)
+  
+```
+
+
+```{r}
+homicide_MD = homicide_df %>% 
+  filter(city_state == 'Baltimore,MD')
+
+logi_fit = glm(
+  resolved ~ victim_age + victim_race + victim_sex, 
+  data = homicide_MD,
+  family = binomial()) %>% 
+  broom::tidy() %>% 
+  mutate(
+    or = exp(estimate),
+    ci_lwr = or - 1.96*std.error,
+    ci_upr = or + 1.96*std.error) %>% 
+  select(term, or,ci_lwr, ci_upr) %>% 
+  knitr::kable(digit = 3)
+```
+
+
+
+```{r}
+homi_result = 
+homicide_df %>%
+  nest(data = -city_state) %>% 
+  mutate(
+    model = 
+      map(.x = data, ~glm(resolved ~ victim_age+victim_race+victim_sex, data = .x, family = binomial())),
+    results = map(model, broom::tidy)
+  ) %>% 
+  select(-data, -model) %>% 
+  unnest(results) %>% 
+  mutate(
+    or = exp(estimate),
+    ci_lwr = or - 1.96*std.error,
+    ci_upr = or + 1.96*std.error) %>% 
+  select(city_state, term, or,ci_lwr, ci_upr) 
+  
+```
+
+
+Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot
+```{r}
+homi_result %>% 
+  filter(term == 'victim_raceWhite') %>% 
+  mutate(city_state = fct_reorder(city_state, or)) %>% 
+  ggplot(aes(x = city_state, y = or))+
+  geom_point()+
+  geom_errorbar(aes(ymin = ci_lwr, ymax = ci_upr)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+
+
+##Problem 2 
+
+
+Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
+
+```{r}
+birthwt_df = read_csv('data/birthweight.csv')%>% 
+  mutate(frace = recode_factor(frace, `1` = 'White', `2` = 'Black', `3` = 'Asian', `4` = 'Puerto_Rican', `8` = 'Other', `9` = 'Unknown'),
+         mrace = recode_factor(mrace, `1` = 'White', `2` = 'Black', `3` = 'Asian', `4` = 'Puerto_Rican', `8` = 'Other'),
+         babysex = recode_factor(babysex, `1` = 'male', `2` =  'female'),
+         malform = recode_factor(malform, `0` = 'absent', `1` = 'present')) 
+
+birthwt_df %>% skimr::skim_without_charts()
+```
+
+
+### propose a model
+There is sense that mother's pre-birth BMI will have a positive impact on babybirthweight, and a mother who is smoking would have negtive impact on babybirth weight.
+
+```{r}
+birthwt_df %>% 
+  ggplot(aes(x = ppbmi, y = bwt)) +geom_point()
+
+birthwt_df %>% 
+  mutate(smoken = case_when(
+    smoken == 0 ~ '0',
+    smoken > 0&smoken <=5 ~ 'less than 5',
+    smoken <= 10&smoken >5 ~ 'less than 10',
+    TRUE ~ 'more than 10'
+     )) %>% 
+  ggplot(aes(x = smoken, y = bwt)) + geom_violin()
+```
+
+The above plots sort of align with the hypothesis that PPBMI and smoken are factors underly babybirth weight.
+
+So the model I propose is:
+```{r}
+my_model = lm(bwt ~ ppbmi + smoken, data = birthwt_df)
+
+birthwt_df %>% 
+  modelr::add_residuals(my_model) %>% 
+  modelr::add_predictions(my_model) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point()
+ 
+
+```
+
+### setted model
+```{r}
+model_1 = lm(bwt ~ blength + gaweeks, data = birthwt_df)
+summary(model_1)
+
+model_2 = lm(bwt~ bhead*blength*babysex, data = birthwt_df)
+summary(model_2)
+
+```
+
+
+make comparison:
+
+```{r}
+cv_df = 
+  crossv_mc(birthwt_df, 100) %>% 
+  mutate(
+    train = map(train, as.tibble),
+    test = map(test, as.tibble)) %>% 
+  mutate(
+    my_model = map(.x = train, ~lm(bwt ~ ppbmi + smoken, data = .x )),
+    model_1 = map(.x = train,~lm(bwt ~ blength + gaweeks, data = .x)),
+    model_2 = map(.x = train,~lm(bwt~ bhead*blength*babysex, data = .x)),
+  ) %>% 
+  mutate(
+    my_model_rmse = map2_dbl(my_model, test, ~rmse(model = .x, data = .y)),
+    model_1_rmse = map2_dbl(model_1, test, ~rmse(model = .x, data = .y)),
+    model_2_rmse = map2_dbl(model_2, test, ~rmse(model = .x, data = .y))
+  ) %>% 
+  select(ends_with('rmse')) %>% 
+  pivot_longer(
+    everything(),
+    names_to = 'model',
+    values_to = 'rmse'
+  ) %>% 
+    ggplot(aes(x = model, y = rmse)) + geom_violin()
+
+cv_df
+```
+
+According to the plot, the second model, which is model_2(using head circumference, length, sex, and all interactions (including the three-way interaction) between these) has the best fitness.
+
+
+##Problem 3 
+For this problem, we’ll use the 2017 Central Park weather data that we’ve seen elsewhere. The code chunk below (adapted from the course website) will download these data.
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+
+```{r}
+boot_straps = 
+  weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    model = map(strap, ~lm(tmax~tmin, data = .x)),
+    glance = map(model, broom::glance),
+    results = map(model, broom::tidy)
+  ) %>% 
+  unnest(glance) %>% 
+  select(.id, r.squared, results) %>% 
+  unnest(results) %>%
+  mutate(
+    term=str_replace(term,"\\(Intercept\\)","Intercept")
+  ) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+ group_by(.id) %>% 
+  summarise(intercept = max(Intercept, na.rm = TRUE),
+            tmin = max(tmin, na.rm = TRUE),
+            r.squared = mean(r.squared)) %>% 
+  mutate(
+    result = log(intercept*tmin)
+  )
+
+boot_straps %>% 
+  ggplot(aes(x = r.squared)) + geom_density()+
+  labs(title = 'distribution of r_squared')
+  
+boot_straps %>% 
+  ggplot(aes(x = r.squared)) + geom_density()+
+  labs(title = 'distribution of log(beta0*beta1)')
+```
+
+Both r_squared and log(beta0*beta1) follows normal distribution, which align with central limit theorem.
+
+
+```{r}
+boot_straps %>% 
+  summarize(
+    r_squared_ci_lower = quantile(r.squared, 0.025), 
+    r_squared_ci_upper = quantile(r.squared, 0.975),
+    result_ci_lower = quantile(result, 0.025), 
+    result_ci_upper = quantile(result, 0.975))
+```
+
+
+r^2
+log(β^0∗β^1)
+Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. Plot the distribution of your estimates, and describe these in words. Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r^2 and log(β^0∗β^1). Note: broom::glance() is helpful for extracting r^2 from a fitted regression, and broom::tidy() (with some additional wrangling) should help in computing  log(β^0∗β^1)
